@@ -1,0 +1,16 @@
+# Environment variables
+.env
+
+# Build outputs
+bin/
+obj/
+*.exe
+
+# IDE files
+.vs/
+.vscode/
+
+# Results
+results.json
+results.xml
+/.idea/
