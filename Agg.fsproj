@@ -6,9 +6,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="Program.fs" />
     <Content Include=".env" />
-    <Content Include=".gitignore" />
+    <Compile Include="RecentActivity\MostRecentPhoto.fs" />
+    <Compile Include="RecentActivity\MostRecentMovieRating.fs" />
+    <Compile Include="RecentActivity\MostRecentCommit.fs" />
+    <Compile Include="Program.fs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -16,7 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="bin\Debug\net9.0\" />
+    <Content Include="bin\Debug\net9.0\" />
   </ItemGroup>
 
 </Project>
