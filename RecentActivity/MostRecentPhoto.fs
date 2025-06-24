@@ -21,20 +21,13 @@ let httpClient = new HttpClient()
 // Convert FlickrPhoto to RSS item XML
 let flickrPhotoToRssItem (photo: FlickrPhoto) =
     let title = if String.IsNullOrEmpty(photo.Title) then "Recent Photo" else photo.Title
-    let description = sprintf "<img src=\"%s\" alt=\"%s\" /><br/>Date: %s<br/><a href=\"%s\">View all my photos</a>" 
-                        photo.Url title photo.DateUpload photo.MyPhotos
-    let pubDate = 
-        if String.IsNullOrEmpty(photo.DateUpload) then 
-            DateTime.Now.ToString("R")
-        else
-            let timestamp = Int64.Parse(photo.DateUpload)
-            let date = DateTimeOffset.FromUnixTimeSeconds(timestamp)
-            date.ToString("MMM dd")
+    let description = $"My latest photo is titled '%s{title}'"
+    let pubDate = System.DateTime.SpecifyKind(DateTimeOffset.FromUnixTimeSeconds(int64 photo.DateUpload).DateTime, System.DateTimeKind.Utc)
     
     XElement(XName.Get("item"),
         XElement(XName.Get("title"), title),
         XElement(XName.Get("description"), description),
-        XElement(XName.Get("link"), photo.MyPhotos),
+        XElement(XName.Get("link"), photo.Url),
         XElement(XName.Get("guid"), photo.Id),
         XElement(XName.Get("pubDate"), pubDate)
     )

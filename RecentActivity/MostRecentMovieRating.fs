@@ -7,15 +7,23 @@ open DotNetEnv
 
 Env.Load() |> ignore
 
-type MovieIds = {
+type Ids = {
     Tmdb: int64
     Trakt: int64
+}
+
+type Episode = {
+    Title: string
+    ShowTitle: string
+    Season: int
+    Number: int
+    Ids: Ids
 }
 
 type Movie = {
     Title: string
     Year: int
-    Ids: MovieIds
+    Ids: Ids
 }
 
 type MovieRating = {
@@ -24,8 +32,20 @@ type MovieRating = {
     RatedAt: string
 }
 
+type EpisodeRating = {
+    Episode: Episode
+    Rating: int
+    RatedAt: string
+}
+
 type MovieHistoryEntry = {
     Movie: Movie
+    WatchedAt: string
+    Rating: int option
+}
+
+type EpisodeHistoryEntry = {
+    Episode: Episode
     WatchedAt: string
     Rating: int option
 }
@@ -37,7 +57,6 @@ let httpClient =
     client.DefaultRequestHeaders.Add("User-Agent", "F#-App/1.0")
     client
 
-// Convert MovieHistoryEntry to RSS item XML
 let movieHistoryToRssItem (movieEntry: MovieHistoryEntry) =
     let ratingText = 
         match movieEntry.Rating with
@@ -45,8 +64,8 @@ let movieHistoryToRssItem (movieEntry: MovieHistoryEntry) =
         | None -> ""
     
     let title = sprintf "%s (%d)%s" movieEntry.Movie.Title movieEntry.Movie.Year ratingText
-    let description = sprintf "Watched %s (%d) on Trakt%s" movieEntry.Movie.Title movieEntry.Movie.Year ratingText
-    let pubDate = System.DateTime.Parse(movieEntry.WatchedAt).ToString("R") // RFC 1123 format
+    let description = sprintf "Watched and reviewed %s (%d) on Trakt%s" movieEntry.Movie.Title movieEntry.Movie.Year ratingText
+    let pubDate = System.DateTime.SpecifyKind(System.DateTime.Parse(movieEntry.WatchedAt), System.DateTimeKind.Utc)
     let guid = sprintf "trakt-movie-%i-%s" movieEntry.Movie.Ids.Trakt movieEntry.WatchedAt
     let link = sprintf "https://trakt.tv/movies/%i" movieEntry.Movie.Ids.Trakt
     
@@ -55,10 +74,41 @@ let movieHistoryToRssItem (movieEntry: MovieHistoryEntry) =
         XElement(XName.Get("description"), description),
         XElement(XName.Get("link"), link),
         XElement(XName.Get("guid"), guid),
-        XElement(XName.Get("pubDate"), pubDate)
+        XElement(XName.Get("pubDate"), pubDate),
+        
+        XElement(XName.Get("contentType"),"movie-review"),
+        XElement(XName.Get("movieTitle"), movieEntry.Movie.Title),
+        XElement(XName.Get("releaseYear"), movieEntry.Movie.Year),
+        XElement(XName.Get("rating"), movieEntry.Rating |> Option.defaultValue -1)
     )
 
-// Parse movie rating entry from JSON
+let episodeHistoryToRssItem (episodeEntry: EpisodeHistoryEntry) =
+    let ratingText = 
+        match episodeEntry.Rating with
+        | Some rating -> sprintf " - Rated %d/10" rating
+        | None -> ""
+    
+    let title = sprintf "%s%s" episodeEntry.Episode.Title ratingText
+    let description = sprintf "Watched and reviewed %s - %s (Season %d / Episode %d) on Trakt%s" episodeEntry.Episode.ShowTitle episodeEntry.Episode.Title episodeEntry.Episode.Season episodeEntry.Episode.Number ratingText
+    let pubDate = System.DateTime.SpecifyKind(System.DateTime.Parse(episodeEntry.WatchedAt), System.DateTimeKind.Utc)
+    let guid = sprintf "trakt-episode-%i-%s" episodeEntry.Episode.Ids.Trakt episodeEntry.WatchedAt
+    let link = sprintf "https://trakt.tv/episodes/%i" episodeEntry.Episode.Ids.Trakt
+    
+    XElement(XName.Get("item"),
+        XElement(XName.Get("title"), title),
+        XElement(XName.Get("description"), description),
+        XElement(XName.Get("link"), link),
+        XElement(XName.Get("guid"), guid),
+        XElement(XName.Get("pubDate"), pubDate),
+        
+        XElement(XName.Get("contentType"),"episode-review"),
+        XElement(XName.Get("episodeTitle"), episodeEntry.Episode.Title),
+        XElement(XName.Get("season"), episodeEntry.Episode.Season),
+        XElement(XName.Get("number"), episodeEntry.Episode.Number),
+        XElement(XName.Get("showTitle"), episodeEntry.Episode.ShowTitle),
+        XElement(XName.Get("rating"), episodeEntry.Rating |> Option.defaultValue -1)
+    )
+
 let parseMovieRating (jsonElement: JsonElement) =
     let movie = jsonElement.GetProperty("movie")
     let ids = movie.GetProperty("ids")
@@ -83,7 +133,33 @@ let parseMovieRating (jsonElement: JsonElement) =
         RatedAt = ratedAt
     }
 
-// Get all movie ratings from Trakt
+let parseEpisodeRating (jsonElement: JsonElement) =
+    let episode = jsonElement.GetProperty("episode")
+    let ids = episode.GetProperty("ids")
+    let show = jsonElement.GetProperty("show")
+    
+    let ids = {
+        Tmdb = ids.GetProperty("tmdb").GetInt64()
+        Trakt = ids.GetProperty("trakt").GetInt64()
+    }
+    
+    let episodeInfo = {
+        Title = episode.GetProperty("title").GetString()
+        ShowTitle = show.GetProperty("title").GetString()
+        Season = episode.GetProperty("season").GetInt32()
+        Number = episode.GetProperty("number").GetInt32()
+        Ids = ids
+    }
+    
+    let rating = jsonElement.GetProperty("rating").GetInt32()
+    let ratedAt = jsonElement.GetProperty("rated_at").GetString()
+    
+    {
+        Episode = episodeInfo
+        Rating = rating
+        RatedAt = ratedAt
+    }
+
 let getMovieRatings () = async {
     try
         let url = "https://api.trakt.tv/users/joe307bad/ratings/movies"
@@ -113,11 +189,43 @@ let getMovieRatings () = async {
         return []
 }
 
-// Find rating for a specific Trakt ID
+let getEpisodeRatings () = async {
+    try
+        let url = "https://api.trakt.tv/users/joe307bad/ratings/episodes"
+        let! response = httpClient.GetAsync(url) |> Async.AwaitTask
+        let! content = response.Content.ReadAsStringAsync() |> Async.AwaitTask
+        
+        if System.String.IsNullOrWhiteSpace(content) then
+            printfn "Error: Empty episode ratings response from API"
+            return []
+        elif not (content.TrimStart().StartsWith("[") || content.TrimStart().StartsWith("{")) then
+            printfn "Error: Episode Ratings response is not JSON. Content: %s" content
+            return []
+        else
+            let jsonDoc = JsonDocument.Parse(content)
+            let entries = jsonDoc.RootElement.EnumerateArray()
+            
+            let ratings = 
+                entries
+                |> Seq.map parseEpisodeRating
+                |> Seq.toList
+            
+            return ratings
+            
+    with
+    | ex -> 
+        printfn "Error getting ratings: %s" ex.Message
+        return []
+}
+
 let findRatingByTraktId (ratings: MovieRating list) (traktId: int64) =
     ratings
     |> List.tryFind (fun r -> r.Movie.Ids.Trakt = traktId)
-// Parse movie history entry from JSON
+
+let findEpisodeRatingByTraktId (ratings: EpisodeRating list) (traktId: int64) =
+    ratings
+    |> List.tryFind (fun r -> r.Episode.Ids.Trakt = traktId)
+
 let parseMovieHistoryEntry (jsonElement: JsonElement) =
     let movie = jsonElement.GetProperty("movie")
     let ids = movie.GetProperty("ids")
@@ -138,10 +246,11 @@ let parseMovieHistoryEntry (jsonElement: JsonElement) =
     {
         Movie = movieInfo
         WatchedAt = watchedAt
-        Rating = None // Will be populated from ratings API
+        Rating = None
     }
 
-// Get the most recent movie history entry and return as RSS XML
+
+
 let getMostRecentMovieRatingAsRss () = async {
     try
         let url = "https://api.trakt.tv/users/joe307bad/history/movies"
@@ -165,11 +274,9 @@ let getMostRecentMovieRatingAsRss () = async {
             
             match mostRecentHistoryEntry with
             | Some historyEntry -> 
-                // Get all ratings to find the rating for this movie
                 let! ratings = getMovieRatings()
                 let movieRating = findRatingByTraktId ratings historyEntry.Movie.Ids.Trakt
                 
-                // Create the final entry with rating
                 let entryWithRating = {
                     historyEntry with Rating = movieRating |> Option.map (fun r -> r.Rating)
                 }
@@ -187,9 +294,84 @@ let getMostRecentMovieRatingAsRss () = async {
         return None
 }
 
-// Get RSS XML as string
+
+let parseEpisodeHistoryEntry (jsonElement: JsonElement) =
+    let episode = jsonElement.GetProperty("episode")
+    let episodeIds = episode.GetProperty("ids")
+    let show = jsonElement.GetProperty("show")
+    
+    let episodeIdsRecord = {
+        Tmdb = episodeIds.GetProperty("tmdb").GetInt64()
+        Trakt = episodeIds.GetProperty("trakt").GetInt64()
+    }
+    
+    let episodeInfo = {
+        Title = episode.GetProperty("title").GetString()
+        Season = episode.GetProperty("season").GetInt32()
+        Number = episode.GetProperty("number").GetInt32()
+        ShowTitle = show.GetProperty("title").GetString()
+        Ids = episodeIdsRecord
+    }
+    
+    let watchedAt = jsonElement.GetProperty("watched_at").GetString()
+    
+    {
+        Episode = episodeInfo
+        WatchedAt = watchedAt
+        Rating = None
+    }
+
+let getMostRecentEpisodeRatingAsRss () = async {
+    try
+        let url = "https://api.trakt.tv/users/joe307bad/history/episodes"
+        let! response = httpClient.GetAsync(url) |> Async.AwaitTask
+        let! content = response.Content.ReadAsStringAsync() |> Async.AwaitTask
+        
+        if System.String.IsNullOrWhiteSpace(content) then
+            printfn "Error: Empty response from API"
+            return None
+        elif not (content.TrimStart().StartsWith("[") || content.TrimStart().StartsWith("{")) then
+            printfn "Error: Response is not JSON. Content: %s" content
+            return None
+        else
+            let jsonDoc = JsonDocument.Parse(content)
+            let entries = jsonDoc.RootElement.EnumerateArray()
+            
+            let mostRecentEpisodeEntry = 
+                entries
+                |> Seq.map parseEpisodeHistoryEntry
+                |> Seq.tryHead
+            
+            match mostRecentEpisodeEntry with
+            | Some historyEntry -> 
+                let! ratings = getEpisodeRatings()
+                let episodeRating = findEpisodeRatingByTraktId ratings historyEntry.Episode.Ids.Trakt
+                
+                let entryWithRating = {
+                    historyEntry with Rating = episodeRating |> Option.map (fun r -> r.Rating)
+                }
+                
+                let rssItem = episodeHistoryToRssItem entryWithRating
+                return Some rssItem
+            | None -> 
+                printfn "No episode entries found in response"
+                return None   
+    with
+    | ex -> 
+        printfn "Error: %s" ex.Message
+        printfn "Stack trace: %s" ex.StackTrace
+        return None
+}
+
 let getMostRecentMovieRatingAsRssString () = async {
     let! rssItem = getMostRecentMovieRatingAsRss()
+    match rssItem with
+    | Some item -> return Some (item.ToString())
+    | None -> return None
+}
+
+let getMostRecentEpisodeRatingAsRssString () = async {
+    let! rssItem = getMostRecentEpisodeRatingAsRss()
     match rssItem with
     | Some item -> return Some (item.ToString())
     | None -> return None

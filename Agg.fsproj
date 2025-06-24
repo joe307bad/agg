@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -6,6 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Content Include="results.xml" />
     <Content Include=".env" />
     <Compile Include="RecentActivity\MostRecentPhoto.fs" />
     <Compile Include="RecentActivity\MostRecentMovieRating.fs" />
@@ -15,10 +16,6 @@
 
   <ItemGroup>
     <PackageReference Include="DotNetEnv" Version="3.1.1" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Content Include="bin\Debug\net9.0\" />
   </ItemGroup>
 
 </Project>
