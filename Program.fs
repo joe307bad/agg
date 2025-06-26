@@ -18,7 +18,7 @@ let rssItemGenerators: RssItemGenerator[] = [|
     MostRecentCommit.getMostRecentPushEventAsRssString
     MostRecentMovieRating.getMostRecentMovieRatingAsRssString
     MostRecentMovieRating.getMostRecentEpisodeRatingAsRssString
-    MostRecentFlickrPhoto.getMostRecentFlickrPhotoAsRssString
+    MostRecentPhoto.getMostRecentFlickrPhotoAsRssString
 |]
 
 let generateRssFeed (items: string list) =
@@ -84,7 +84,7 @@ let startScheduler () =
 [<EntryPoint>]
 let main argv =
     let builder = WebApplication.CreateBuilder()
-    builder.WebHost.UseUrls("http://localhost:5001") |> ignore
+    builder.WebHost.UseUrls("http://0.0.0.0:5001") |> ignore
     let app = builder.Build()
 
     app.MapGet("/", fun (context: Microsoft.AspNetCore.Http.HttpContext) ->

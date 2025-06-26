@@ -6,7 +6,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="results.xml" />
     <Content Include=".env" />
     <Compile Include="RecentActivity\MostRecentPhoto.fs" />
     <Compile Include="RecentActivity\MostRecentMovieRating.fs" />

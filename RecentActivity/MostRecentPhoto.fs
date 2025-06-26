@@ -1,4 +1,4 @@
-module MostRecentFlickrPhoto
+module MostRecentPhoto
 
 open System
 open System.Net.Http
