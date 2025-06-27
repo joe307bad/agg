@@ -29,7 +29,8 @@ let flickrPhotoToRssItem (photo: FlickrPhoto) =
         XElement(XName.Get("description"), description),
         XElement(XName.Get("link"), photo.Url),
         XElement(XName.Get("guid"), photo.Id),
-        XElement(XName.Get("pubDate"), pubDate)
+        XElement(XName.Get("pubDate"), pubDate),
+        XElement(XName.Get("contentType"),"photo-upload")
     )
 
 // Get the most recent Flickr photo and return as RSS XML
@@ -57,7 +58,7 @@ let getMostRecentFlickrPhotoAsRss () = async {
                 let title = try photoElement.GetProperty("title").GetString() with _ -> ""
                 
                 let photoUrl = if not (String.IsNullOrEmpty(id)) then 
-                                sprintf "https://live.staticflickr.com/%s/%s_%s.jpg" server id secret
+                                sprintf "https://live.staticflickr.com/%s/%s_%s_c.jpg" server id secret
                                else ""
                 
                 let flickrPhoto = {

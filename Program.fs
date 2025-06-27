@@ -100,7 +100,6 @@ let main argv =
     app.UseStaticFiles(StaticFileOptions(FileProvider = new PhysicalFileProvider(Path.Combine(Directory.GetCurrentDirectory(), "wwwroot")))) |> ignore
     
     startScheduler() |> ignore
-    generateRssToWwwroot() |> Async.RunSynchronously
     
     app.Run()
     0

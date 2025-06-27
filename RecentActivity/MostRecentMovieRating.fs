@@ -60,11 +60,11 @@ let httpClient =
 let movieHistoryToRssItem (movieEntry: MovieHistoryEntry) =
     let ratingText = 
         match movieEntry.Rating with
-        | Some rating -> sprintf " - Rated %d/10" rating
+        | Some rating -> sprintf " - %d/10" rating
         | None -> ""
     
     let title = sprintf "%s (%d)%s" movieEntry.Movie.Title movieEntry.Movie.Year ratingText
-    let description = sprintf "Watched and reviewed %s (%d) on Trakt%s" movieEntry.Movie.Title movieEntry.Movie.Year ratingText
+    let description = sprintf "%s (%d)%s" movieEntry.Movie.Title movieEntry.Movie.Year ratingText
     let pubDate = System.DateTime.SpecifyKind(System.DateTime.Parse(movieEntry.WatchedAt), System.DateTimeKind.Utc)
     let guid = sprintf "trakt-movie-%i-%s" movieEntry.Movie.Ids.Trakt movieEntry.WatchedAt
     let link = sprintf "https://trakt.tv/movies/%i" movieEntry.Movie.Ids.Trakt
@@ -85,11 +85,11 @@ let movieHistoryToRssItem (movieEntry: MovieHistoryEntry) =
 let episodeHistoryToRssItem (episodeEntry: EpisodeHistoryEntry) =
     let ratingText = 
         match episodeEntry.Rating with
-        | Some rating -> sprintf " - Rated %d/10" rating
+        | Some rating -> sprintf " - %d/10" rating
         | None -> ""
     
     let title = sprintf "%s%s" episodeEntry.Episode.Title ratingText
-    let description = sprintf "Watched and reviewed %s - %s (Season %d / Episode %d) on Trakt%s" episodeEntry.Episode.ShowTitle episodeEntry.Episode.Title episodeEntry.Episode.Season episodeEntry.Episode.Number ratingText
+    let description = sprintf "%s - %s (Season %d / Episode %d)%s" episodeEntry.Episode.ShowTitle episodeEntry.Episode.Title episodeEntry.Episode.Season episodeEntry.Episode.Number ratingText
     let pubDate = System.DateTime.SpecifyKind(System.DateTime.Parse(episodeEntry.WatchedAt), System.DateTimeKind.Utc)
     let guid = sprintf "trakt-episode-%i-%s" episodeEntry.Episode.Ids.Trakt episodeEntry.WatchedAt
     let link = sprintf "https://trakt.tv/episodes/%i" episodeEntry.Episode.Ids.Trakt

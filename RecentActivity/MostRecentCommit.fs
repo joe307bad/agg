@@ -67,7 +67,7 @@ let getMostRecentPushEventAsRss () = async {
                         CommitMessage = message
                         CreatedAt = createdAt
                         Sha = sha
-                        Url = url
+                        Url = sprintf "https://github.com/%s/commit/%s" repo sha
                     })
             |> Seq.filter (fun pushEvent -> 
                 not (pushEvent.CommitMessage.Contains("Badaczewski_CV")))
