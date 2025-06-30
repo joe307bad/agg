@@ -17,29 +17,6 @@ type FlickrPhoto = {
     MyPhotos: string
 }
 
-let createHttpClient () =
-    let client = new HttpClient()
-    client.Timeout <- TimeSpan.FromSeconds(30.0)
-    client.DefaultRequestHeaders.Add("User-Agent", "FlickrPhotoFetcher/1.0")
-    client
-
-let httpClient = createHttpClient()
-
-// Convert FlickrPhoto to RSS item XML
-let flickrPhotoToRssItem (photo: FlickrPhoto) =
-    let title = if String.IsNullOrEmpty(photo.Title) then "Recent Photo" else photo.Title
-    let description = $"My latest photo is titled '%s{title}'"
-    let pubDate = System.DateTime.SpecifyKind(DateTimeOffset.FromUnixTimeSeconds(int64 photo.DateUpload).DateTime, System.DateTimeKind.Utc)
-    
-    XElement(XName.Get("item"),
-        XElement(XName.Get("title"), title),
-        XElement(XName.Get("description"), description),
-        XElement(XName.Get("link"), photo.Url),
-        XElement(XName.Get("guid"), photo.Id),
-        XElement(XName.Get("pubDate"), pubDate),
-        XElement(XName.Get("contentType"),"photo-upload")
-    )
-
 // Enhanced error types for better error handling
 type FlickrError =
     | ApiKeyMissing
@@ -50,6 +27,16 @@ type FlickrError =
     | InvalidPhotoData of string
     | TimeoutError
     | UnknownError of string
+
+let createHttpClient () =
+    let client = new HttpClient()
+    client.Timeout <- TimeSpan.FromSeconds(10.0) // Reduce timeout for faster feedback
+    client.DefaultRequestHeaders.Add("User-Agent", "FlickrPhotoFetcher/1.0")
+    client.DefaultRequestHeaders.Add("Accept", "application/json")
+    client.DefaultRequestHeaders.Add("Connection", "close") // Don't keep connection alive
+    client
+
+let httpClient = createHttpClient()
 
 // Enhanced logging function
 let logError (error: FlickrError) =
@@ -70,112 +57,175 @@ let logError (error: FlickrError) =
     | InvalidPhotoData field ->
         printfn "[%s] DATA ERROR: Invalid or missing photo data for field: %s" timestamp field
     | TimeoutError ->
-        printfn "[%s] TIMEOUT ERROR: Request timed out after 30 seconds" timestamp
+        printfn "[%s] TIMEOUT ERROR: Request timed out after 10 seconds" timestamp
     | UnknownError message ->
         printfn "[%s] UNKNOWN ERROR: %s" timestamp message
 
-// Safe JSON property accessor - mimics JavaScript's optional chaining
-let tryGetProperty (propertyName: string) (element: JsonElement) =
-    match element.TryGetProperty(propertyName) with
-    | (true, prop) -> Some prop
-    | (false, _) -> None
+// Convert FlickrPhoto to RSS item XML
+let flickrPhotoToRssItem (photo: FlickrPhoto) =
+    let title = if String.IsNullOrEmpty(photo.Title) then "Recent Photo" else photo.Title
+    let description = $"My latest photo is titled '%s{title}'"
+    let pubDate = System.DateTime.SpecifyKind(DateTimeOffset.FromUnixTimeSeconds(int64 photo.DateUpload).DateTime, System.DateTimeKind.Utc)
+    
+    XElement(XName.Get("item"),
+        XElement(XName.Get("title"), title),
+        XElement(XName.Get("description"), description),
+        XElement(XName.Get("link"), photo.Url),
+        XElement(XName.Get("guid"), photo.Id),
+        XElement(XName.Get("pubDate"), pubDate),
+        XElement(XName.Get("contentType"),"photo-upload")
+    )
 
-let tryGetString (element: JsonElement) =
+// Enhanced photo data validation
+let validatePhotoData (photoElement: JsonElement) =
+    let requiredFields = ["id"; "server"; "secret"; "dateupload"]
+    let missingFields = 
+        requiredFields 
+        |> List.filter (fun field -> 
+            not (photoElement.TryGetProperty(field).Item1) || 
+            String.IsNullOrEmpty(photoElement.GetProperty(field).GetString()))
+    
+    if missingFields.Length > 0 then
+        Error (InvalidPhotoData (String.Join(", ", missingFields)))
+    else
+        Ok ()
+
+// Simple test function to diagnose connectivity issues
+let testFlickrConnection () = async {
     try
-        Some (element.GetString())
+        let flickrApiKey = System.Environment.GetEnvironmentVariable("FLICKR_API_KEY")
+        if String.IsNullOrEmpty(flickrApiKey) then
+            printfn "No API key found"
+            return false |> ignore
+        
+        printfn "[%s] Testing basic connectivity to Flickr..." (DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss UTC"))
+        
+        // Test with a simpler endpoint first
+        let testUrl = $"https://api.flickr.com/services/rest/?method=flickr.test.echo&api_key=%s{flickrApiKey}&format=json&nojsoncallback=1"
+        
+        use cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(5.0))
+        use testClient = new HttpClient()
+        testClient.Timeout <- TimeSpan.FromSeconds(5.0)
+        
+        let! response = testClient.GetAsync(testUrl, cts.Token) |> Async.AwaitTask
+        let! content = response.Content.ReadAsStringAsync() |> Async.AwaitTask
+        
+        printfn "[%s] Test response: %s" (DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss UTC")) content
+        return response.IsSuccessStatusCode
+        
     with
-    | _ -> None
+    | ex ->
+        printfn "[%s] Connection test failed: %s" (DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss UTC")) ex.Message
+        return false
+}
 
 // Get the most recent Flickr photo and return as RSS XML
 let getMostRecentFlickrPhotoAsRss () = async {
     try
+        // Check API key
         let flickrApiKey = System.Environment.GetEnvironmentVariable("FLICKR_API_KEY")
         if String.IsNullOrEmpty(flickrApiKey) then
             logError ApiKeyMissing
             return None
         else
+            // Make API request with detailed error handling
             let url = $"https://api.flickr.com/services/rest/?method=flickr.people.getPublicPhotos&api_key=%s{flickrApiKey}&user_id=201450104@N05&per_page=1&page=1&format=json&nojsoncallback=1&extras=date_upload"
             
+            printfn "[%s] INFO: Making request to Flickr API..." (DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss UTC"))
+            printfn "[DEBUG] Request URL: %s" (url.Replace(flickrApiKey, "***API_KEY***"))
+            
             try
-                let! response = httpClient.GetAsync(url) |> Async.AwaitTask
+                // Use a cancellation token for better control
+                use cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(10.0))
+                
+                let! response = httpClient.GetAsync(url, cts.Token) |> Async.AwaitTask
+                
+                printfn "[%s] INFO: Received response with status: %A" (DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss UTC")) response.StatusCode
                 
                 if not response.IsSuccessStatusCode then
                     let statusCode = int response.StatusCode
                     let reason = response.ReasonPhrase
                     logError (NetworkError ($"HTTP {statusCode}: {reason}", Some statusCode))
-                    return None |> ignore
+                    return None |> ignore 
                 
+                printfn "[%s] INFO: Reading response content..." (DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss UTC"))
                 let! content = response.Content.ReadAsStringAsync() |> Async.AwaitTask
-                printfn "[DEBUG] API Response: %s" (content.Substring(0, min 200 content.Length))
+                printfn "[%s] INFO: Response length: %d characters" (DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss UTC")) content.Length
                 
-                let jsonDoc = JsonDocument.Parse(content)
-                let root = jsonDoc.RootElement
-                
-                // Check API status like JavaScript does
-                match tryGetProperty "stat" root with
-                | Some stat when stat.GetString() = "fail" ->
-                    let errorMsg = 
-                        match tryGetProperty "message" root with
-                        | Some msg -> msg.GetString()
-                        | None -> "Unknown API error"
-                    logError (ApiResponseError errorMsg)
-                    return None |> ignore
-                | _ -> ()
-                
-                // Navigate the JSON structure like JavaScript: photos?.photos?.photo?.[0]
-                match tryGetProperty "photos" root with
-                | None -> 
-                    logError (JsonParseError "Missing 'photos' property in API response")
-                    return None
-                | Some photos ->
-                    match tryGetProperty "photo" photos with
-                    | None ->
+                // Parse JSON with error handling
+                try
+                    let jsonDoc = JsonDocument.Parse(content)
+                    let root = jsonDoc.RootElement
+                    
+                    // Check if API returned an error
+                    if root.TryGetProperty("stat").Item1 then
+                        let stat = root.GetProperty("stat").GetString()
+                        if stat = "fail" then
+                            let errorMsg = 
+                                if root.TryGetProperty("message").Item1 then
+                                    root.GetProperty("message").GetString()
+                                else "Unknown API error"
+                            logError (ApiResponseError errorMsg)
+                            return None |> ignore 
+                    
+                    // Extract photos
+                    if not (root.TryGetProperty("photos").Item1) then
+                        logError (JsonParseError "Missing 'photos' property in API response")
+                        return None |> ignore 
+                    
+                    let photos = root.GetProperty("photos")
+                    
+                    if not (photos.TryGetProperty("photo").Item1) then
                         logError (JsonParseError "Missing 'photo' array in API response")
-                        return None
-                    | Some photoArray ->
-                        let photoElements = photoArray.EnumerateArray() |> Seq.toList
-                        if photoElements.IsEmpty then
-                            logError NoPhotosFound
+                        return None |> ignore 
+                    
+                    let photoArray = photos.GetProperty("photo").EnumerateArray()
+                    
+                    match photoArray |> Seq.tryHead with
+                    | Some photoElement ->
+                        // Validate photo data
+                        match validatePhotoData photoElement with
+                        | Error error ->
+                            logError error
                             return None
-                        else
-                            let photoElement = photoElements.[0]
+                        | Ok () ->
+                            // Extract photo data with fallbacks
+                            let id = photoElement.GetProperty("id").GetString()
+                            let server = photoElement.GetProperty("server").GetString()
+                            let secret = photoElement.GetProperty("secret").GetString()
+                            let dateUpload = photoElement.GetProperty("dateupload").GetString()
+                            let title = 
+                                if photoElement.TryGetProperty("title").Item1 then
+                                    photoElement.GetProperty("title").GetString()
+                                else ""
                             
-                            // Extract data with safe access like JavaScript
-                            let id = tryGetProperty "id" photoElement |> Option.bind tryGetString |> Option.defaultValue ""
-                            let server = tryGetProperty "server" photoElement |> Option.bind tryGetString |> Option.defaultValue ""
-                            let secret = tryGetProperty "secret" photoElement |> Option.bind tryGetString |> Option.defaultValue ""
-                            let dateUpload = tryGetProperty "dateupload" photoElement |> Option.bind tryGetString |> Option.defaultValue ""
-                            let title = tryGetProperty "title" photoElement |> Option.bind tryGetString |> Option.defaultValue ""
+                            let photoUrl = $"https://live.staticflickr.com/%s{server}/%s{id}_%s{secret}_c.jpg"
                             
-                            printfn "[DEBUG] Extracted data: id=%s, server=%s, secret=%s, date=%s, title=%s" id server secret dateUpload title
+                            let flickrPhoto = {
+                                Id = id
+                                Server = server
+                                Secret = secret
+                                DateUpload = dateUpload
+                                Title = title
+                                Url = photoUrl
+                                MyPhotos = "https://www.flickr.com/photos/joe307bad/"
+                            }
                             
-                            // Build photo URL like JavaScript (without _c suffix to match JS)
-                            let photoUrl = 
-                                if not (String.IsNullOrEmpty(id)) && not (String.IsNullOrEmpty(server)) && not (String.IsNullOrEmpty(secret)) then 
-                                    $"https://live.staticflickr.com/%s{server}/%s{id}_%s{secret}.jpg"
-                                else 
-                                    ""
-                            
-                            if String.IsNullOrEmpty(photoUrl) then
-                                logError (InvalidPhotoData "id, server, or secret")
-                                return None
-                            else
-                                let flickrPhoto = {
-                                    Id = id
-                                    Server = server
-                                    Secret = secret
-                                    DateUpload = dateUpload
-                                    Title = title
-                                    Url = photoUrl
-                                    MyPhotos = "https://www.flickr.com/photos/joe307bad/"
-                                }
-                                
-                                let rssItem = flickrPhotoToRssItem flickrPhoto
-                                printfn "[%s] SUCCESS: Retrieved photo with ID %s" (DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss UTC")) id
-                                return Some rssItem
-                                
+                            let rssItem = flickrPhotoToRssItem flickrPhoto
+                            printfn "[%s] SUCCESS: Retrieved photo with ID %s" (DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss UTC")) id
+                            return Some rssItem
+                    | None -> 
+                        logError NoPhotosFound
+                        return None
+                        
+                with 
+                | :? JsonException as jsonEx ->
+                    logError (JsonParseError $"Invalid JSON structure: {jsonEx.Message}")
+                    return None
+                    
             with
             | :? TaskCanceledException as tcEx ->
+                // Check if it's actually a timeout vs user cancellation
                 if tcEx.CancellationToken.IsCancellationRequested then
                     logError TimeoutError
                 else
