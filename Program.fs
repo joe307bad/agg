@@ -15,9 +15,9 @@ Env.Load() |> ignore
 type RssItemGenerator = unit -> Async<string option>
 
 let rssItemGenerators: RssItemGenerator[] = [|
-    MostRecentCommit.getMostRecentPushEventAsRssString
-    MostRecentMovieRating.getMostRecentMovieRatingAsRssString
-    MostRecentMovieRating.getMostRecentEpisodeRatingAsRssString
+    // MostRecentCommit.getMostRecentPushEventAsRssString
+    // MostRecentMovieRating.getMostRecentMovieRatingAsRssString
+    // MostRecentMovieRating.getMostRecentEpisodeRatingAsRssString
     MostRecentPhoto.getMostRecentFlickrPhotoAsRssString
 |]
 
