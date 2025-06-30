@@ -39,6 +39,39 @@ let flickrPhotoToRssItem (photo: FlickrPhoto) =
         XElement(XName.Get("contentType"),"photo-upload")
     )
 
+// Enhanced error types for better error handling
+type FlickrError =
+    | ApiKeyMissing
+    | NetworkError of string * int option
+    | JsonParseError of string
+    | ApiResponseError of string
+    | NoPhotosFound
+    | InvalidPhotoData of string
+    | TimeoutError
+    | UnknownError of string
+// Enhanced logging function
+let logError (error: FlickrError) =
+    let timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss UTC")
+    match error with
+    | ApiKeyMissing -> 
+        printfn "[%s] ERROR: FLICKR_API_KEY environment variable is not set or empty" timestamp
+    | NetworkError (message, statusCode) ->
+        match statusCode with
+        | Some code -> printfn "[%s] NETWORK ERROR [%d]: %s" timestamp code message
+        | None -> printfn "[%s] NETWORK ERROR: %s" timestamp message
+    | JsonParseError message ->
+        printfn "[%s] JSON PARSE ERROR: Failed to parse API response - %s" timestamp message
+    | ApiResponseError message ->
+        printfn "[%s] API ERROR: Flickr API returned an error - %s" timestamp message
+    | NoPhotosFound ->
+        printfn "[%s] WARNING: No photos found in API response" timestamp
+    | InvalidPhotoData field ->
+        printfn "[%s] DATA ERROR: Invalid or missing photo data for field: %s" timestamp field
+    | TimeoutError ->
+        printfn "[%s] TIMEOUT ERROR: Request timed out after 30 seconds" timestamp
+    | UnknownError message ->
+        printfn "[%s] UNKNOWN ERROR: %s" timestamp message
+
 // Get the most recent Flickr photo and return as RSS XML
 let getMostRecentFlickrPhotoAsRss () = async {
     try
@@ -84,8 +117,11 @@ let getMostRecentFlickrPhotoAsRss () = async {
                 return None
             
     with
-    | ex -> 
-        printfn $"Error: %s{ex.Message}"
+    | :? JsonException as jsonEx ->
+        logError (JsonParseError jsonEx.Message)
+        return None
+    | ex ->
+        logError (UnknownError $"JSON processing error: {ex.Message}")
         return None
 }
 
