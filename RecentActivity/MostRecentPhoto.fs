@@ -16,7 +16,13 @@ type FlickrPhoto = {
     MyPhotos: string
 }
 
-let httpClient = new HttpClient()
+let createHttpClient () =
+    let client = new HttpClient()
+    client.Timeout <- TimeSpan.FromSeconds(30.0) // Set explicit timeout
+    client.DefaultRequestHeaders.Add("User-Agent", "FlickrPhotoFetcher/1.0")
+    client
+
+let httpClient = createHttpClient()
 
 // Convert FlickrPhoto to RSS item XML
 let flickrPhotoToRssItem (photo: FlickrPhoto) =
@@ -41,7 +47,7 @@ let getMostRecentFlickrPhotoAsRss () = async {
             printfn "FLICKR_API_KEY environment variable not set"
             return None
         else
-            let url = sprintf "https://api.flickr.com/services/rest/?method=flickr.people.getPublicPhotos&api_key=%s&user_id=201450104@N05&per_page=1&page=1&format=json&nojsoncallback=1&extras=date_upload" flickrApiKey
+            let url = $"https://api.flickr.com/services/rest/?method=flickr.people.getPublicPhotos&api_key=%s{flickrApiKey}&user_id=201450104@N05&per_page=1&page=1&format=json&nojsoncallback=1&extras=date_upload"
             let! response = httpClient.GetAsync(url) |> Async.AwaitTask
             let! content = response.Content.ReadAsStringAsync() |> Async.AwaitTask
             
@@ -58,7 +64,7 @@ let getMostRecentFlickrPhotoAsRss () = async {
                 let title = try photoElement.GetProperty("title").GetString() with _ -> ""
                 
                 let photoUrl = if not (String.IsNullOrEmpty(id)) then 
-                                sprintf "https://live.staticflickr.com/%s/%s_%s_c.jpg" server id secret
+                                $"https://live.staticflickr.com/%s{server}/%s{id}_%s{secret}_c.jpg"
                                else ""
                 
                 let flickrPhoto = {
@@ -79,7 +85,7 @@ let getMostRecentFlickrPhotoAsRss () = async {
             
     with
     | ex -> 
-        printfn "Error: %s" ex.Message
+        printfn $"Error: %s{ex.Message}"
         return None
 }
 
