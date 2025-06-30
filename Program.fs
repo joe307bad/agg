@@ -57,7 +57,7 @@ let generateRssToWwwroot () =
         let! results = 
             rssItemGenerators
             |> Array.map (fun generator -> generator())
-            |> Async.Parallel
+            |> Async.Sequential
         
         let validItems = 
             results
