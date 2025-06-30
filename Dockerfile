@@ -5,6 +5,9 @@ WORKDIR /app
 # Copy project files
 COPY . ./
 
+# Copy .env file if it exists
+COPY .env* ./
+
 # Restore dependencies
 RUN dotnet restore
 
@@ -17,7 +20,9 @@ WORKDIR /app
 
 # Copy the built application
 COPY --from=build /app/out .
-COPY --from=build .env .
+
+# Copy .env file to the final stage
+COPY --from=build /app/.env* ./
 
 # Create wwwroot directory
 RUN mkdir -p wwwroot
