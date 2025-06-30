@@ -17,7 +17,6 @@ WORKDIR /app
 
 # Copy the built application
 COPY --from=build /app/out .
-COPY /github/workspace/.env .
 
 # Create wwwroot directory
 RUN mkdir -p wwwroot
