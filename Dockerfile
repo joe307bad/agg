@@ -17,6 +17,7 @@ WORKDIR /app
 
 # Copy the built application
 COPY --from=build /app/out .
+COPY --from=build .env .
 
 # Create wwwroot directory
 RUN mkdir -p wwwroot
