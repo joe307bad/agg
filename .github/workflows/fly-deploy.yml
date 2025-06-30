@@ -14,13 +14,13 @@ jobs:
       FLICKR_API_KEY: ${{ secrets.FLICKR_API_KEY }}
     concurrency: deploy-group    # optional: ensure only one action runs at a time
     steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
       - name: Make envfile
         uses: SpicyPizza/create-envfile@v1.3
         with:
           envkey_TRACKT_TV_API_KEY: ${{ secrets.TRACKT_TV_API_KEY }}
           envkey_FLICKR_API_KEY: ${{ secrets.FLICKR_API_KEY }}
-      - uses: actions/checkout@v4
-      - uses: superfly/flyctl-actions/setup-flyctl@master
       - run: flyctl deploy --remote-only
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
