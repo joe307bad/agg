@@ -124,12 +124,16 @@ let private createRssItem (photo: FlickrPhoto) : XElement =
 
 let getMostRecentFlickrPhotoAsRssString () : Async<string option> =
     async {
-        use client = new HttpClient()
+        let httpClient = 
+            let client = new HttpClient()
+            client.DefaultRequestHeaders.Add("User-Agent", "F#-App/1.0")
+            client
+            
         let url = "https://www.flickr.com/services/feeds/photos_public.gne?id=201450104@N05&format=rss_200"
         
         try
             printfn "Making HTTP request to: %s" url
-            let! httpResponse = client.GetAsync(url) |> Async.AwaitTask
+            let! httpResponse = httpClient.GetAsync(url) |> Async.AwaitTask
             printfn "HTTP Response Status: %A" httpResponse.StatusCode
             printfn "HTTP Response Status Message: %s" httpResponse.ReasonPhrase
             
