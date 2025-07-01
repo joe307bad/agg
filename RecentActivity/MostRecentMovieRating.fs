@@ -214,7 +214,7 @@ let getEpisodeRatings () = async {
             
     with
     | ex -> 
-        printfn "Error getting ratings: %s" ex.Message
+        printfn $"Error getting ratings: %s{ex.Message}"
         return []
 }
 
