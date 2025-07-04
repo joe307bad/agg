@@ -73,13 +73,14 @@ let generateRssToWwwroot () =
         printfn $"RSS feed saved to: %s{filePath}"
     }
 
+let mutable timer: System.Threading.Timer option = None
+
 let startScheduler () =
-    let timer = new System.Threading.Timer(
+    timer <- Some(new System.Threading.Timer(
         (fun _ -> generateRssToWwwroot() |> Async.RunSynchronously),
         null,
         TimeSpan.Zero,
-        TimeSpan.FromHours(12.0))
-    timer
+        TimeSpan.FromHours(12.0)))
 
 [<EntryPoint>]
 let main argv =
@@ -97,9 +98,14 @@ let main argv =
             System.Threading.Tasks.Task.CompletedTask
     ) |> ignore
     
+    app.MapGet("/health", fun (context: Microsoft.AspNetCore.Http.HttpContext) ->
+        context.Response.StatusCode <- 200
+        context.Response.WriteAsync("OK")
+    ) |> ignore
+    
     app.UseStaticFiles(StaticFileOptions(FileProvider = new PhysicalFileProvider(Path.Combine(Directory.GetCurrentDirectory(), "wwwroot")))) |> ignore
     
-    startScheduler() |> ignore
+    startScheduler()
     
     app.Run()
     0
