@@ -132,18 +132,13 @@ let getMostRecentFlickrPhotoAsRssString () : Async<string option> =
         let url = "https://www.flickr.com/services/feeds/photos_public.gne?id=201450104@N05&format=rss_200"
         
         try
-            printfn "Making HTTP request to: %s" url
             let! httpResponse = httpClient.GetAsync(url) |> Async.AwaitTask
-            printfn "HTTP Response Status: %A" httpResponse.StatusCode
-            printfn "HTTP Response Status Message: %s" httpResponse.ReasonPhrase
             
             if httpResponse.IsSuccessStatusCode then
                 let! response = httpResponse.Content.ReadAsStringAsync() |> Async.AwaitTask
-                printfn "Response received, length: %d characters" response.Length
                 
                 match parseFlickrRss response with
                 | Some photo ->
-                    printfn "Successfully parsed photo: %s" photo.Title
                     let rssItem = createRssItem photo
                     return Some (rssItem.ToString())
                 | None ->
